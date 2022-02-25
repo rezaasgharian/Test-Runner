@@ -1,0 +1,44 @@
+version: '3.7'
+
+services:
+  db:
+    image: postgres:11
+    ports:
+      - 127.0.0.1:8082:5432
+    env_file: ./ionos/.env
+    volumes:
+      - ./provision/db-initialize.sql:/docker-entrypoint-initdb.d/1.sql
+      - ./provision/postgres-data:/var/lib/postgresql/data
+  web:
+    build: .
+    command: >
+      /bin/bash -c "
+        ./wait-for-dependencies.sh db 5432;
+        python manage.py makemigrations;
+        python manage.py migrate;
+        python manage.py runserver 0.0.0.0:8081;
+      "
+    env_file: ./ionos/.env
+    volumes:
+      - .:/code
+    ports:
+      - "8081:8081"
+    depends_on:
+      - db
+      - redis
+  redis:
+    image: "redis:alpine"
+  celery_worker:
+    build: .
+    command: >
+      /bin/bash -c "
+        ./wait-for-dependencies.sh db 5432;
+        celery -A ionos worker --loglevel=info
+      "
+    env_file: ./ionos/.env
+    volumes:
+      - .:/code
+    depends_on:
+      - db
+      - web
+      - redis
